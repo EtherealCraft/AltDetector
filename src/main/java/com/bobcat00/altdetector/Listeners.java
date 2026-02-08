@@ -155,48 +155,47 @@ public class Listeners implements Listener
         final String name = player.getName();
         
         // Add to the database - async (mostly)
-        updateDatabaseGetAlts(ip, uuid, name, new Callback<String, String>()
-        {
-            // Process alt string - main thread, delayed by 2 ticks
-            @Override
-            public void execute(String altString, final String uuid)
+        // Process alt string - main thread, delayed by 2 ticks
+        updateDatabaseGetAlts(ip, uuid, name, (altString, uuid1) -> {
+            // Player object for uuid, null if not found or invalid
+            Player player1 = null;
+            try
             {
-                // Player object for uuid, null if not found or invalid
-                Player player = null;
-                try
-                {
-                    player = Bukkit.getPlayer(UUID.fromString(uuid));
-                }
-                catch(IllegalArgumentException exception)
-                {
-                    // Bad UUID string
-                }
+                player1 = Bukkit.getPlayer(UUID.fromString(uuid1));
+            }
+            catch(IllegalArgumentException exception)
+            {
+                // Bad UUID string
+            }
 
-                // Output to log file without color codes
-                String cleanAltString = altString.replaceAll("&[0123456789AaBbCcDdEeFfKkLlMmNnOoRr]", "");
-                plugin.getLogger().info(cleanAltString);
+            // Output to log file without color codes
+            String cleanAltString = altString.replaceAll("&[0123456789AaBbCcDdEeFfKkLlMmNnOoRr]", "");
+            plugin.getLogger().info(cleanAltString);
 
-                // Output including prefix to players with altdetector.notify
-                String notifyString = ChatColor.translateAlternateColorCodes('&', plugin.config.getJoinPlayerPrefix() + altString);
+            // Output including prefix to players with altdetector.notify
+            String notifyString = ChatColor.translateAlternateColorCodes('&', plugin.config.getJoinPlayerPrefix() + altString);
 
-                for (Player p : plugin.getServer().getOnlinePlayers())
+            for (Player p : plugin.getServer().getOnlinePlayers())
+            {
+                if (p.hasPermission("altdetector.notify"))
                 {
-                    if (p.hasPermission("altdetector.notify"))
+                    // Output if recipient has seevanished perm OR player is not vanished
+                    if (p.hasPermission("altdetector.notify.seevanished") || !isVanished(player1, p))
                     {
-                        // Output if recipient has seevanished perm OR player is not vanished 
-                        if (p.hasPermission("altdetector.notify.seevanished") || !isVanished(player, p))
-                        {
-                            p.sendMessage(notifyString);
-                        }
+                        p.sendMessage(notifyString);
                     }
                 }
-
-                // Send to Discord webhook if enabled
-                if (plugin.config.isDiscordEnabled() && plugin.discordWebhook != null && player != null)
-                {
-                    plugin.discordWebhook.sendAltMessage(cleanAltString, plugin.config.getMCServerName());
-                }
             }
+
+            // Send to Discord webhook if enabled
+            if (plugin.config.isDiscordEnabled() && plugin.discordWebhook != null && player1 != null)
+            {
+                plugin.discordWebhook.sendAltMessage(cleanAltString, plugin.config.getMCServerName());
+            }
+
+            plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), "lp user " + name + " permission set ethereal.cangetvoterewards false");
+            player.sendMessage(ChatColor.DARK_AQUA + "[EtherealMC]" + ChatColor.RED + " We've detected that you are using an alt account. This is allowed, but you won't get vote rewards.");
+            player.sendMessage(ChatColor.DARK_AQUA + "[EtherealMC]" + ChatColor.RED + " Contact a staff member if you think this is an error");
         }
         );
     }
