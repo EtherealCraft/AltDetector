@@ -59,21 +59,25 @@ public class Listeners implements Listener
     private void updateDatabaseGetAlts(final String ip,
                                        final String uuid,
                                        final String name,
-                                       final Callback<String, String> callback)
+                                       final Callback<String, String> callback,
+                                       final Callback<String, String> altDetectedCallback)
     {
         final String joinPlayer          = plugin.config.getJoinPlayer();
         final String joinPlayerList      = plugin.config.getJoinPlayerList();
         final String joinPlayerSeparator = plugin.config.getJoinPlayerSeparator();
         
         // Go to async thread
-        
+        boolean firstAltDetection = false;
         Bukkit.getScheduler().runTaskAsynchronously(plugin, new Runnable()
         {
             @Override
             public void run()
             {
+                // how to know we've detected an alt:
+                // this uuid does not exist in the database, in other words it is a first join to towny.
+                // if this ip exists in the database for another user, we think this is an alt.
+
                 // 1. Update playertable
-                
                 String playerName = plugin.database.getNameFromPlayertable(uuid);
                 
                 if (playerName.equals(""))
@@ -110,7 +114,6 @@ public class Listeners implements Listener
                                                                          joinPlayerList,
                                                                          joinPlayerSeparator,
                                                                          plugin.expirationTime);
-                
                 if (altString != null)
                 {
                     // Go back to the main thread
@@ -123,6 +126,20 @@ public class Listeners implements Listener
                             callback.execute(altString, uuid);
                         }
                     }, 2L); // Wait 2 ticks
+                }
+
+                if (playerName.equals("") && !ipEntryExists && altString != null) {
+                    // we think we've found the first join of an alt
+                    // Go back to the main thread
+                    Bukkit.getScheduler().runTaskLater(plugin, new Runnable()
+                    {
+                        @Override
+                        public void run()
+                        {
+                            // Call the callback with the result
+                            altDetectedCallback.execute(altString, uuid);
+                        }
+                    }, 4L); // Wait 4 ticks
                 }
             
             }
@@ -192,10 +209,13 @@ public class Listeners implements Listener
             {
                 plugin.discordWebhook.sendAltMessage(cleanAltString, plugin.config.getMCServerName());
             }
-
-            plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), "lp user " + name + " permission set ethereal.cangetvoterewards false");
-            player.sendMessage(ChatColor.DARK_AQUA + "[EtherealMC]" + ChatColor.RED + " We've detected that you are using an alt account. This is allowed, but you won't get vote rewards.");
-            player.sendMessage(ChatColor.DARK_AQUA + "[EtherealMC]" + ChatColor.RED + " Contact a staff member if you think this is an error");
+        },
+        (altString, uuid1) -> {
+            if (!player.hasPermission("ethereal.falsepositivealt")) {
+                plugin.getServer().dispatchCommand(plugin.getServer().getConsoleSender(), "lp user " + name + " permission set ethereal.cangetvoterewards false");
+                player.sendMessage(ChatColor.DARK_AQUA + "[EtherealMC]" + ChatColor.RED + " We've detected that you are using an alt account. This is allowed, but you won't get vote rewards.");
+                player.sendMessage(ChatColor.DARK_AQUA + "[EtherealMC]" + ChatColor.RED + " Contact a staff member if you think this is an error");
+            }
         }
         );
     }
